@@ -1,22 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}
+  name: zomato
   labels:
-    app: {{ .Values.app.name }}
+    app: zomato
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 2
   selector:
     matchLabels:
-      app: {{ .Values.app.name }}
+      app: zomato
   template:
     metadata:
       labels:
-        app: {{ .Values.app.name }}
+        app: zomato
     spec:
       containers:
-      - name: {{ .Values.app.name }}
-        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+      - name: zomato
+        image: {{ .Values.image.repository }}:latest
         ports:
         - containerPort: 3000
+
 
