@@ -4,6 +4,6 @@ app:
   name: zomato
 
 image:
-  repository: neeraj46665/zomato:latest
+  repository: neeraj46665/zomato
   tag: latest
 
