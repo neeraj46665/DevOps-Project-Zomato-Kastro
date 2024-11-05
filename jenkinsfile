@@ -1,12 +1,18 @@
 pipeline {
     agent any
     tools {
-        jdk 'jdk17'
+       
         nodejs 'node23'
+    
     }
     environment {
-        SCANNER_HOME=tool 'sonar-scanner'
+        SCANNER_HOME=tool 'sonar6.2'
+        imageName = "neeraj46665/zomato"
     }
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Enter Docker image tag')
+    }
+    
     stages {
         stage ("clean workspace") {
             steps {
@@ -15,19 +21,21 @@ pipeline {
         }
         stage ("Git Checkout") {
             steps {
-                git 'https://github.com/KastroVKiran/Zomato-Project-Kastro.git'
+                git url: "https://github.com/neeraj46665/DevOps-Project-Zomato-Kastro.git", branch: "master"
             }
         }
         stage("Sonarqube Analysis"){
             steps{
-                withSonarQubeEnv('sonar-server') {
+                withSonarQubeEnv('sonarserver') {
                     sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=zomato \
                     -Dsonar.projectKey=zomato '''
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=zomato -Dsonar.projectKey=zomato -Dsonar.verbose=true
+'''
                 }
             }
         }
         stage("Code Quality Gate"){
-           steps {
+          steps {
                 script {
                     waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token' 
                 }
@@ -35,6 +43,7 @@ pipeline {
         }
         stage("Install NPM Dependencies") {
             steps {
+                sh 'rm -rf node_modules'
                 sh "npm install"
             }
         }
@@ -44,65 +53,87 @@ pipeline {
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
     }
 }
-        stage ("Trivy File Scan") {
-            steps {
-                sh "trivy fs . > trivy.txt"
-            }
-        }
+        // stage ("Trivy File Scan") {
+        //     steps {
+        //         // sh "trivy fs . > trivy.txt"
+        //         sh "trivy fs --scanners vuln --skip-files dependency-check-report.xml --format json --output trivy.txt ."
+
+
+        //     }
+        // }
         stage ("Build Docker Image") {
             steps {
-                sh "docker build -t zomato ."
+                sh "docker build -t ${imageName}:${params.IMAGE_TAG} ."
             }
         }
-        stage ("Tag & Push to DockerHub") {
+        stage ("Push to DockerHub") {
             steps {
                 script {
-                    withDockerRegistry(credentialsId: 'docker') {
-                        sh "docker tag zomato kastrov/zomato:latest "
-                        sh "docker push kastrov/zomato:latest "
+                    withDockerRegistry(credentialsId: 'dockerlogin') {
+                       
+                        sh "docker push ${imageName}:${params.IMAGE_TAG}"
                     }
                 }
             }
         }
-        stage('Docker Scout Image') {
+         stage ("Update Kubernetes Manifest") {
             steps {
-                script{
-                   withDockerRegistry(credentialsId: 'docker', toolName: 'docker'){
-                       sh 'docker-scout quickview kastrov/zomato:latest'
-                       sh 'docker-scout cves kastrov/zomato:latest'
-                       sh 'docker-scout recommendations kastrov/zomato:latest'
-                   }
+                script {
+                    // Update the image tag in deployment.yaml
+                    dir("/var/lib/jenkins/workspace/zomato-cicd/Kubernetes") {
+                        sh """
+                            
+                            sed -i 's|image: neeraj46665/zomato:[^[:space:]]*|image: neeraj46665/zomato:${params.IMAGE_TAG}|' deployment.yaml
+
+                          
+                        """
+                    }
                 }
             }
         }
-        stage ("Deploy to Container") {
+
+
+        
+        stage ("Git Commit and Push") {
             steps {
-                sh 'docker run -d --name zomato -p 3000:3000 kastrov/zomato:latest'
+                withCredentials([usernamePassword(credentialsId: 'Github-cred', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                    script {
+                        sh """
+                        git config user.name "neeraj"
+                        git config user.email "na46665@gmail.com"
+                        git add Kubernetes/deployment.yaml
+        
+                        # Check if there are changes to commit
+                        if git diff --cached --quiet; then
+                            echo "No changes to commit."
+                        else
+                            git commit -m "Update image tag to ${params.IMAGE_TAG}"
+                            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/neeraj46665/DevOps-Project-Zomato-Kastro.git master
+                        fi
+                        """
+                    }
+                }
             }
         }
+
+
+        stage ("Trigger ArgoCD Sync") {
+            steps {
+                echo "ArgoCD will detect the change and sync the application automatically."
+            }
+        }
+    
     }
     post {
-    always {
-        emailext attachLog: true,
-            subject: "'${currentBuild.result}'",
-            body: """
-                <html>
-                <body>
-                    <div style="background-color: #FFA07A; padding: 10px; margin-bottom: 10px;">
-                        <p style="color: white; font-weight: bold;">Project: ${env.JOB_NAME}</p>
-                    </div>
-                    <div style="background-color: #90EE90; padding: 10px; margin-bottom: 10px;">
-                        <p style="color: white; font-weight: bold;">Build Number: ${env.BUILD_NUMBER}</p>
-                    </div>
-                    <div style="background-color: #87CEEB; padding: 10px; margin-bottom: 10px;">
-                        <p style="color: white; font-weight: bold;">URL: ${env.BUILD_URL}</p>
-                    </div>
-                </body>
-                </html>
-            """,
-            to: 'kastrokiran@gmail.com',
-            mimeType: 'text/html',
-            attachmentsPattern: 'trivy.txt'
+        // always {
+        //     cleanWs()
+        // }
+        success {
+            echo 'Build succeeded!'
+        }
+        failure {
+            echo 'Build failed!'
         }
     }
+    
 }
