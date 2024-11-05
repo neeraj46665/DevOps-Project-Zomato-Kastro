@@ -8,6 +8,9 @@ pipeline {
     environment {
         SCANNER_HOME=tool 'sonar6.2'
         imageName = "neeraj46665/zomato"
+        SLACK_CHANNEL = '#jenkins-cicd'  // specify your channel
+        SLACK_COLOR_SUCCESS = '#36a64f'
+        SLACK_COLOR_FAILURE = '#ff0000'
     }
     parameters {
         string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Enter Docker image tag')
@@ -129,11 +132,12 @@ pipeline {
         //     cleanWs()
         // }
         success {
-            echo 'Build succeeded!'
+            slackSend(channel: env.SLACK_CHANNEL, color: env.SLACK_COLOR_SUCCESS, message: "Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' succeeded.")
         }
         failure {
-            echo 'Build failed!'
+            slackSend(channel: env.SLACK_CHANNEL, color: env.SLACK_COLOR_FAILURE, message: "Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' failed.")
         }
+        
     }
     
 }
